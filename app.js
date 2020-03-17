@@ -1,38 +1,26 @@
 const NodeMediaServer = require('./');
+const fs = require('fs')
 
 const config = {
   rtmp: {
     port: 1935,
-    chunk_size: 60000,
+    chunk_size: 0,
     gop_cache: true,
-    ping: 30,
-    ping_timeout: 60
+    ping: 10,
+    ping_timeout: 30 
   },
   http: {
     port: 8000,
-    mediaroot: './media',
-    webroot: './www',
-    allow_origin: '*',
-    api: true
-  },
-  https: {
-    port: 8443,
-    key: './privatekey.pem',
-    cert: './certificate.pem',
-  },
-  auth: {
-    api: true,
-    api_user: 'admin',
-    api_pass: 'admin',
-    play: false,
-    publish: false,
-    secret: 'nodemedia2017privatekey'
-  },
+  }
 };
 
 
 let nms = new NodeMediaServer(config)
 nms.run();
+
+const writeStream = fs.createWriteStream('./fuck')
+
+nms.connect('/live/test', writeStream)
 
 nms.on('preConnect', (id, args) => {
   console.log('[NodeEvent on preConnect]', `id=${id} args=${JSON.stringify(args)}`);

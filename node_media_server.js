@@ -4,13 +4,11 @@
 //  Copyright (c) 2018 Nodemedia. All rights reserved.
 //
 
-const Https = require('https');
-const Logger = require('./node_core_logger');
-const NodeRtmpServer = require('./node_rtmp_server');
-const NodeHttpServer = require('./node_http_server');
-const NodeTransServer = require('./node_trans_server');
-const NodeRelayServer = require('./node_relay_server');
-const context = require('./node_core_ctx');
+const Logger = require("./node_core_logger");
+const NodeRtmpServer = require("./node_rtmp_server");
+const NodeHttpServer = require("./node_http_server");
+const NodeFlvSession = require("./node_flv_session");
+const context = require("./node_core_ctx");
 const Package = require("./package.json");
 
 class NodeMediaServer {
@@ -21,57 +19,42 @@ class NodeMediaServer {
   run() {
     Logger.setLogType(this.config.logType);
     Logger.log(`Node Media Server v${Package.version}`);
+    // 接受 RTMP 推流
     if (this.config.rtmp) {
       this.nrs = new NodeRtmpServer(this.config);
       this.nrs.run();
     }
 
+    // 输出 RTMP 流
     if (this.config.http) {
       this.nhs = new NodeHttpServer(this.config);
       this.nhs.run();
     }
 
-    if (this.config.trans) {
-      if (this.config.cluster) {
-        Logger.log('NodeTransServer does not work in cluster mode');
-      } else {
-        this.nts = new NodeTransServer(this.config);
-        this.nts.run();
-      }
-    }
-
-    if (this.config.relay) {
-      if (this.config.cluster) {
-        Logger.log('NodeRelayServer does not work in cluster mode');
-      } else {
-        this.nls = new NodeRelayServer(this.config);
-        this.nls.run();
-      }
-    }
-
-    process.on('uncaughtException', function (err) {
-      Logger.error('uncaughtException', err);
+    process.on("uncaughtException", function(err) {
+      Logger.error("uncaughtException", err);
     });
+  }
 
-    Https.get("https://registry.npmjs.org/node-media-server", function (res) {
-      let size = 0;
-      let chunks = [];
-      res.on('data', function (chunk) {
-        size += chunk.length;
-        chunks.push(chunk);
-      });
-      res.on('end', function () {
-        let data = Buffer.concat(chunks, size);
-        let jsonData = JSON.parse(data.toString());
-        let latestVersion = jsonData['dist-tags']['latest'];
-        let latestVersionNum = latestVersion.split('.')[0] << 16 | latestVersion.split('.')[1] << 8 | latestVersion.split('.')[2] & 0xff;
-        let thisVersionNum = Package.version.split('.')[0] << 16 | Package.version.split('.')[1] << 8 | Package.version.split('.')[2] & 0xff
-        if (thisVersionNum < latestVersionNum) {
-          Logger.log(`There is a new version ${latestVersion} that can be updated`);
-        }
-      });
-    }).on('error', function (e) {
-    });
+  /**
+   *
+   * @param {string} name
+   * @param {WritableStream} stream
+   */
+  connect(name, stream) {
+    const session = new NodeFlvSession(
+      this.config,
+      {
+        nmsConnectionType: "local",
+        socket: {
+          remoteAddress: "localstream"
+        },
+        method: 'GET',
+        url: `http://localhost:8000${name}.flv`
+      },
+      stream
+    );
+    session.run();
   }
 
   on(eventName, listener) {
@@ -95,4 +78,4 @@ class NodeMediaServer {
   }
 }
 
-module.exports = NodeMediaServer
+module.exports = NodeMediaServer;

@@ -3,7 +3,6 @@
 //  illuspas[a]gmail.com
 //  Copyright (c) 2018 Nodemedia. All rights reserved.
 //
-const URL = require("url");
 const Logger = require("./node_core_logger");
 const context = require("./node_core_ctx");
 const NodeCoreUtils = require("./node_core_utils");
@@ -21,77 +20,48 @@ const FlvPacket = {
   }
 };
 
-class NodeFlvSession {
-  constructor(config, req, res) {
-    this.config = config;
-    this.req = req;
+class NodeFlvLocalSession {
+  /**
+   *
+   * @param {WritableStream} res
+   * @param {string} name rtmp 流名称
+   */
+  constructor(name, res) {
     this.res = res;
     this.id = NodeCoreUtils.generateNewSessionID();
-    this.ip = this.req.socket.remoteAddress;
+    this.name = name;
 
     this.playStreamPath = "";
-    this.playArgs = null;
 
     this.isStarting = false;
     this.isPlaying = false;
     this.isIdling = false;
 
-    if (this.req.nmsConnectionType === "ws") {
-      this.res.cork = this.res._socket.cork.bind(this.res._socket);
-      this.res.uncork = this.res._socket.uncork.bind(this.res._socket);
-      this.res.on("close", this.onReqClose.bind(this));
-      this.res.on("error", this.onReqError.bind(this));
-      this.res.write = this.res.send;
-      this.res.end = this.res.close;
-      this.TAG = "websocket-flv";
-    } else if (this.req.nmsConnectionType === "local") {
-      this.res.on("close", this.onReqClose.bind(this));
-      this.res.on("error", this.onReqError.bind(this));
-      this.TAG = "localstream";
-    } else {
-      this.res.cork = this.res.socket.cork.bind(this.res.socket);
-      this.res.uncork = this.res.socket.uncork.bind(this.res.socket);
-      this.req.socket.on("close", this.onReqClose.bind(this));
-      this.req.on("error", this.onReqError.bind(this));
-      this.TAG = "http-flv";
-    }
+    res.on("close", this.onReqClose.bind(this));
+    res.on("error", this.onReqError.bind(this));
 
     this.numPlayCache = 0;
     context.sessions.set(this.id, this);
   }
 
   run() {
-    let method = this.req.method;
-    let urlInfo = URL.parse(this.req.url, true);
-    let streamPath = urlInfo.pathname.split(".")[0];
-    this.connectCmdObj = {
-      ip: this.ip,
-      method,
-      streamPath,
-      query: urlInfo.query
-    };
+    this.playStreamPath = this.name
+    this.connectCmdObj = { streamPath: this.playStreamPath };
     this.connectTime = new Date();
     this.isStarting = true;
-    Logger.log(
-      `[${this.TAG} connect] id=${this.id} ip=${this.ip} args=${JSON.stringify(
-        urlInfo.query
-      )}`
-    );
+
+    Logger.log(`[connect] id=${this.id} name=${this.name}`);
+
     context.nodeEvent.emit("preConnect", this.id, this.connectCmdObj);
+
     if (!this.isStarting) {
       this.stop();
       return;
     }
+
     context.nodeEvent.emit("postConnect", this.id, this.connectCmdObj);
 
-    if (method === "GET") {
-      this.playStreamPath = streamPath;
-      this.playArgs = urlInfo.query;
-
-      this.onPlay();
-    } else {
-      this.stop();
-    }
+    this.onPlay();
   }
 
   stop() {
@@ -104,7 +74,6 @@ class NodeFlvSession {
           "donePlay",
           this.id,
           this.playStreamPath,
-          this.playArgs
         );
       }
       Logger.log(
@@ -136,25 +105,9 @@ class NodeFlvSession {
       "prePlay",
       this.id,
       this.playStreamPath,
-      this.playArgs
     );
     if (!this.isStarting) {
       return;
-    }
-    if (this.config.auth !== undefined && this.config.auth.play) {
-      let results = NodeCoreUtils.verifyAuth(
-        this.playArgs.sign,
-        this.playStreamPath,
-        this.config.auth.secret
-      );
-      if (!results) {
-        Logger.log(
-          `[${this.TAG} play] Unauthorized. id=${this.id} streamPath=${this.playStreamPath} sign=${this.playArgs.sign}`
-        );
-        this.res.statusCode = 403;
-        this.res.end();
-        return;
-      }
     }
 
     if (!context.publishers.has(this.playStreamPath)) {
@@ -191,6 +144,7 @@ class NodeFlvSession {
       0x00,
       0x00
     ]);
+
     if (publisher.isFirstAudioReceived) {
       FLVHeader[4] |= 0b00000100;
     }
@@ -198,26 +152,27 @@ class NodeFlvSession {
     if (publisher.isFirstVideoReceived) {
       FLVHeader[4] |= 0b00000001;
     }
+
     this.res.write(FLVHeader);
 
     //send Metadata
     if (publisher.metaData != null) {
       let packet = FlvPacket.create(publisher.metaData, 18);
-      let tag = NodeFlvSession.createFlvTag(packet);
+      let tag = NodeFlvLocalSession.createFlvTag(packet);
       this.res.write(tag);
     }
 
     //send aacSequenceHeader
     if (publisher.audioCodec == 10) {
       let packet = FlvPacket.create(publisher.aacSequenceHeader, 8);
-      let tag = NodeFlvSession.createFlvTag(packet);
+      let tag = NodeFlvLocalSession.createFlvTag(packet);
       this.res.write(tag);
     }
 
     //send avcSequenceHeader
     if (publisher.videoCodec == 7 || publisher.videoCodec == 12) {
       let packet = FlvPacket.create(publisher.avcSequenceHeader, 9);
-      let tag = NodeFlvSession.createFlvTag(packet);
+      let tag = NodeFlvLocalSession.createFlvTag(packet);
       this.res.write(tag);
     }
 
@@ -237,7 +192,6 @@ class NodeFlvSession {
       "postPlay",
       this.id,
       this.playStreamPath,
-      this.playArgs
     );
   }
 
@@ -257,4 +211,4 @@ class NodeFlvSession {
   }
 }
 
-module.exports = NodeFlvSession;
+module.exports = NodeFlvLocalSession
