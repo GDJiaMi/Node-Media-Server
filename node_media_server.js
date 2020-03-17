@@ -6,7 +6,6 @@
 
 const Logger = require("./node_core_logger");
 const NodeRtmpServer = require("./node_rtmp_server");
-const NodeHttpServer = require("./node_http_server");
 const NodeFlvSession = require("./node_flv_session");
 const context = require("./node_core_ctx");
 const Package = require("./package.json");
@@ -23,12 +22,6 @@ class NodeMediaServer {
     if (this.config.rtmp) {
       this.nrs = new NodeRtmpServer(this.config);
       this.nrs.run();
-    }
-
-    // 输出 RTMP 流
-    if (this.config.http) {
-      this.nhs = new NodeHttpServer(this.config);
-      this.nhs.run();
     }
 
     process.on("uncaughtException", function(err) {
